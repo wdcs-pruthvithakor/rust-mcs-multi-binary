@@ -1,16 +1,10 @@
 use crate::utils;
-use base64::{
-    alphabet,
-    engine::{self, general_purpose},
-    Engine as _,
-};
-use ed25519_dalek::{Signature, Signer, SigningKey};
-use futures::SinkExt;
-use futures::StreamExt;
+use base64::{engine::general_purpose, Engine as _};
+use ed25519_dalek::{Signer, SigningKey};
+use futures::{SinkExt, StreamExt};
 use serde_json::json;
-use serde_json::Value;
+use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration, Instant};
-use tokio::{net::TcpStream, sync::mpsc};
 use tokio_tungstenite::{
     connect_async, tungstenite::protocol::frame::coding::CloseCode,
     tungstenite::protocol::CloseFrame, tungstenite::protocol::Message, MaybeTlsStream,
@@ -77,9 +71,6 @@ pub async fn client_process(id: usize, keypair: SigningKey, duration: u64) {
     println!("Connected to WebSocket server at {}", ws_url);
     let (mut write, _) = ws_stream.split();
 
-    // let message = format!("Client-{id}");
-    // let signed_message = keypair.sign(message.as_bytes());
-
     if let Some(avg) = utils::calculate_average(&prices) {
         println!("Client {id}: Average BTC price: {:.4}", avg);
 
@@ -107,9 +98,6 @@ pub async fn client_process(id: usize, keypair: SigningKey, duration: u64) {
         } else {
             println!("Server sent close frame.");
         }
-
-        // // Make sure the WebSocket is fully closed after sending the close frame
-        // ws_stream.await.unwrap_or_else(|e| eprintln!("Client {id}: Error while closing WebSocket: {e}"));
     } else {
         eprintln!("Client {id}: No data points collected.");
     }
@@ -128,25 +116,13 @@ pub async fn get_results() {
     );
     let (mut write, mut read) = ws_stream.split();
     write
-        .send(Message::Text(format!("receiver")))
+        .send(Message::Text("receiver".to_string()))
         .await
         .expect("Failed to send message");
     if let Some(message) = read.next().await {
         match message {
             Ok(Message::Text(text)) => {
-                // When a text message is received, print the content
-                // You could parse it if needed, e.g., to extract the global average
                 println!("Received from server: {}", text);
-
-                // // Optionally, parse the message if it's JSON (e.g., for further processing)
-                // match serde_json::from_str::<Value>(&text) {
-                //     Ok(data) => {
-                //         if let Some(global_avg) = data["global_avg"].as_f64() {
-                //             println!("Global average BTC price: {:.4}", global_avg);
-                //         }
-                //     }
-                //     Err(_) => eprintln!("Failed to parse server response as JSON."),
-                // }
             }
             Ok(Message::Close(_)) => {
                 println!("Server closed the connection.");
@@ -154,7 +130,7 @@ pub async fn get_results() {
             Err(e) => {
                 eprintln!("WebSocket error: {}", e);
             }
-            _ => {} // Ignore other types of messages
+            _ => {}
         }
     }
     let close_frame = CloseFrame {

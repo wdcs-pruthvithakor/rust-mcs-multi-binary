@@ -1,7 +1,4 @@
-use base64::{
-    engine::general_purpose,
-    Engine as _,
-};
+use base64::{engine::general_purpose, Engine as _};
 use clap::{Arg, Command};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
