@@ -25,7 +25,7 @@ async fn main() {
                 clients.push(task::spawn(client::client_process(id + 1, keypair, times)));
             }
             println!("Will listen for {} seconds.", times);
-            clients.push(task::spawn(client::get_results()));
+            clients.push(task::spawn(client::get_results(times)));
             for client in clients {
                 let _ = client.await;
             }

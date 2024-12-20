@@ -3,10 +3,12 @@ use base64::{engine::general_purpose, Engine as _};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use futures::{SinkExt, StreamExt};
 use serde_json::Value;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, Notify};
+use tokio::time::{timeout, Duration};
 use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
 
 /// Aggregator process: Compute global average from signed client messages.
@@ -15,7 +17,7 @@ pub async fn aggregator_process(num_clients: usize, public_keys: Arc<Vec<Verifyi
 
     let is_ready = Arc::new(Mutex::new(false));
     let notify = Arc::new(Notify::new());
-
+    let active_clients = Arc::new(AtomicUsize::new(0));
     let clients_verified: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let listener = TcpListener::bind("127.0.0.1:8080")
         .await
@@ -25,7 +27,7 @@ pub async fn aggregator_process(num_clients: usize, public_keys: Arc<Vec<Verifyi
         let public_keys = public_keys.clone();
         let average_list = averages.clone();
         let clients_verified_clone = clients_verified.clone();
-
+        let active_clients_clone = active_clients.clone();
         let is_ready_clone = is_ready.clone();
         let notify_clone = notify.clone();
         tokio::spawn(async move {
@@ -33,19 +35,37 @@ pub async fn aggregator_process(num_clients: usize, public_keys: Arc<Vec<Verifyi
                 .await
                 .expect("Failed to accept WebSocket");
             println!("New client connected!");
-
+            active_clients_clone.fetch_add(1, Ordering::SeqCst);
             // Read messages from the WebSocket stream
             while let Some(msg) = ws_stream.next().await {
                 match msg {
-                    Ok(Message::Text(ref text)) if text == "receiver" => {
-                        loop {
-                            {
-                                let ready = is_ready_clone.lock().await;
-                                if *ready {
-                                    break;
+                    Ok(Message::Text(ref text)) if text.contains("receiver") => {
+                        let data: Vec<_> = text.split(",").collect();
+                        let duration: u64 = data[1].parse().unwrap_or(20) + 10; // extra 10 sec wait in case of delay in connection
+                        match timeout(Duration::from_secs(duration), async {
+                            loop {
+                                {
+                                    let ready = is_ready_clone.lock().await;
+                                    if *ready {
+                                        break;
+                                    }
                                 }
+                                notify_clone.notified().await; // Wait to be notified
                             }
-                            notify_clone.notified().await; // Wait to be notified
+                        })
+                        .await
+                        {
+                            Ok(_) => {
+                                // The loop exited either because of the `is_ready` condition being true
+                                println!("Exited the loop successfully within the duration.");
+                            }
+                            Err(_) => {
+                                // Timeout occurred
+                                eprintln!(
+                                    "Timeout reached after {} seconds while waiting for the aggregator to be ready.",
+                                    duration
+                                );
+                            }
                         }
                         let mut avg_vec = average_list.lock().await;
                         let averages_copy = avg_vec.clone(); // Clone the data
@@ -78,11 +98,21 @@ pub async fn aggregator_process(num_clients: usize, public_keys: Arc<Vec<Verifyi
                     },
                     Err(e) => {
                         eprintln!("WebSocket error: {}", e);
+                        break;
                     }
-                    _ => {}
+                    _ => {
+                        break;
+                    }
                 }
             }
             let cv = clients_verified_clone.lock().await;
+            active_clients_clone.fetch_sub(1, Ordering::SeqCst);
+            eprintln!(
+                "Client disconnected. active: {} count: {}",
+                active_clients_clone.load(Ordering::SeqCst),
+                cv
+            );
+
             if *cv >= num_clients {
                 let mut ready = is_ready_clone.lock().await;
                 *ready = true;

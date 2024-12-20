@@ -103,7 +103,7 @@ pub async fn client_process(id: usize, keypair: SigningKey, duration: u64) {
     }
 }
 
-pub async fn get_results() {
+pub async fn get_results(duration: u64) {
     let ws_url = "ws://127.0.0.1:8080";
 
     // Connect to the WebSocket server
@@ -116,7 +116,7 @@ pub async fn get_results() {
     );
     let (mut write, mut read) = ws_stream.split();
     write
-        .send(Message::Text("receiver".to_string()))
+        .send(Message::Text(format!("receiver,{}", duration)))
         .await
         .expect("Failed to send message");
     if let Some(message) = read.next().await {
