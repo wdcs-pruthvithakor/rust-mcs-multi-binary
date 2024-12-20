@@ -25,7 +25,6 @@ pub async fn aggregator_process(num_clients: usize, public_keys: Arc<Vec<Verifyi
         let public_keys = public_keys.clone();
         let average_list = averages.clone();
         let clients_verified_clone = clients_verified.clone();
-        // let tx_clone = tx.clone();
 
         let is_ready_clone = is_ready.clone();
         let notify_clone = notify.clone();
@@ -59,7 +58,6 @@ pub async fn aggregator_process(num_clients: usize, public_keys: Arc<Vec<Verifyi
                             if let Err(e) = ws_stream.send(Message::Text(response)).await {
                                 eprintln!("Failed to send message to client: {}", e);
                             }
-                            // let _= stream.send(Message::Text(format!("Aggregator: Global average BTC price: {:.4}", global_avg)));
                             utils::save_global_data(&averages_copy, global_avg).unwrap_or_else(
                                 |e| eprintln!("Aggregator: Failed to save global data: {e}"),
                             );
