@@ -70,7 +70,7 @@ mcs_binary/
    ./target/release/aggregator
    ```
 
-4. Start one or more clients:
+4. In new terminal start client:
 
    ```bash
    ./target/release/client --mode=cache --times=10
